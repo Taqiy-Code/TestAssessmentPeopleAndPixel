@@ -5,6 +5,11 @@ from fastapi import Query
 
 T = TypeVar("T")
 
+class MentionStats(BaseModel):
+    data: str | datetime | None = None
+    count: int
+    type: str
+
 class MentionItem(BaseModel):
     external_id: str
     source: str
@@ -39,3 +44,14 @@ class Pagination(BaseModel, Generic[T]):
     has_next: bool
     has_prev: bool
     data: list[T] 
+
+class InternalMentionsBulkItemDetail(BaseModel):
+    data: list[MentionItem]
+    count: int 
+
+class InternalMentionsBulkItem(BaseModel):
+    processed: InternalMentionsBulkItemDetail
+    not_processed: InternalMentionsBulkItemDetail
+
+class InternalMentionsBulkResponse(BaseModel):
+    data: InternalMentionsBulkItem

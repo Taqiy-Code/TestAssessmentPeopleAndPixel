@@ -52,15 +52,15 @@ def test_stats_mentions(client):
 def test_ingest_mentions(client):
     response = client.post("/internal/mentions/bulk", files={"file": ("data.csv", b"a,b,c")})
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "File must be JSON"
+    assert response.json()["detail"] == "File must be JSON"
     
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", b"invalid json")})
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "Unable to parse JSON"
+    assert response.json()["detail"] == "Unable to parse JSON"
     
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", b"[]")})
     assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "No valid data to insert"
+    assert response.json()["detail"] == "No valid data to insert"
     
     valid_data = b'[{"external_id": "123", "source": "twitter", "content": "hello world", "url": "http://example.com"}]'
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", valid_data)})

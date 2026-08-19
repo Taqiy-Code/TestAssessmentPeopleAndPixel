@@ -4,26 +4,30 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from typing import Literal
 
-from app.schemas import MentionItem, MentionSearchFilter, Pagination
+from app.schemas import (
+    MentionItem, 
+    MentionSearchFilter, 
+    Pagination, 
+    MentionStats, 
+    InternalMentionsBulkResponse,
+    InternalMentionsBulkItem,
+    InternalMentionsBulkItemDetail
+)
 from app.utils import normalize_mention
 from hashlib import sha256
 
 router = APIRouter()
 
-@router.post("/internal/mentions/bulk")
-async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
+@router.post("/internal/mentions/bulk", response_model=InternalMentionsBulkResponse)
+async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)) -> InternalMentionsBulkResponse:
     if not file.filename.endswith('.json'):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
-            "message" : "File must be JSON"
-        })
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be JSON")
     
     try:
         content = await file.read()
         data = json.loads(content)
     except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
-            "message" : "Unable to parse JSON",
-        })
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to parse JSON")
         
     if not isinstance(data, list):
         data = [data]
@@ -55,9 +59,7 @@ async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
             continue
             
     if not records:
-        raise HTTPException(detail={
-            "message": "No valid data to insert"
-        }, status_code=status.HTTP_400_BAD_REQUEST)
+        raise HTTPException(detail="No valid data to insert", status_code=status.HTTP_400_BAD_REQUEST)
         
     query = """
         WITH url_update AS (
@@ -90,22 +92,25 @@ async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
         
-    return JSONResponse(content={
-        "message": "Bulk Import Completed",
-        "data": {
-            "processed": {
-                "count": len(records),
-                "inserted": jsonable_encoder(records)
-            },
-            "not_processed": {
-                "count": len(not_processed),
-                "data": jsonable_encoder(not_processed)
-            }
-        }
-    }, status_code=status.HTTP_200_OK)
+    fields = list(MentionItem.model_fields.keys())
 
-@router.get("/mentions")
-async def search_mentions(request: Request, filter: MentionSearchFilter = Depends()):
+    response = InternalMentionsBulkResponse(
+        data= InternalMentionsBulkItem(
+            processed=InternalMentionsBulkItemDetail(
+                count= len(records),
+                data= [MentionItem(**dict(zip(fields, item))) for item in records]
+            ), 
+            not_processed=InternalMentionsBulkItemDetail(
+                count = len(not_processed),
+                data = [MentionItem(**dict(zip(fields, item))) for item in not_processed]
+            )
+        )
+    )
+
+    return response
+
+@router.get("/mentions", response_model=Pagination[MentionItem])
+async def search_mentions(request: Request, filter: MentionSearchFilter = Depends()) -> Pagination[MentionItem]:
     pool = request.app.state.pool
 
     try:
@@ -157,8 +162,8 @@ async def search_mentions(request: Request, filter: MentionSearchFilter = Depend
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-@router.get("/mentions/stats")
-async def mention_stats(request: Request, group_by: Literal["source", "day"]):
+@router.get("/mentions/stats", response_model=list[MentionStats])
+async def mention_stats(request: Request, group_by: Literal["source", "day"]) -> list[MentionStats]:
     pool = request.app.state.pool
 
     try:
@@ -181,9 +186,10 @@ async def mention_stats(request: Request, group_by: Literal["source", "day"]):
             query_result = await conn.fetch(query)
 
         if group_by == "source":
-            return [{"source": row["source"], "count": row["count"]} for row in query_result]
+            return [MentionStats(data=row["source"], type="source", count=row["count"]) for row in query_result] 
         elif group_by == "day":
-            return [{"day": row["day"], "count": row["count"]} for row in query_result]
+            return [MentionStats(data=row["day"], type="day", count=row["count"]) for row in query_result] 
+
     except Exception as e:
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
