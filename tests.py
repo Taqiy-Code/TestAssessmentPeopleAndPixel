@@ -37,14 +37,14 @@ def test_search_mentions_validation(client):
     assert response.json()["detail"][0]["msg"] == "Value error, from_date must be earlier than to_date"
 
     response = client.get("/mentions?from=2021-01-01&to=2021-01-02")
-    assert response.status_code in (200, 500)
+    assert response.status_code == 200
   
 def test_stats_mentions(client):
     response = client.get("/mentions/stats?group_by=source")
-    assert response.status_code in (200, 500)
+    assert response.status_code == 200
     
     response = client.get("/mentions/stats?group_by=day")
-    assert response.status_code in (200, 500)
+    assert response.status_code == 200
     
     response = client.get("/mentions/stats?group_by=author")
     assert response.status_code == 422
@@ -64,7 +64,7 @@ def test_ingest_mentions(client):
     
     valid_data = b'[{"external_id": "123", "source": "twitter", "content": "hello world", "url": "http://example.com"}]'
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", valid_data)})
-    assert response.status_code in (200, 500)
+    assert response.status_code == 200
 
 def test_parse_date():
     # Unix timestamp
