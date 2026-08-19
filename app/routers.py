@@ -1,14 +1,15 @@
 import json
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from typing import Literal
 
 from app.schemas import MentionItem, MentionSearchFilter, Pagination
 from app.utils import normalize_mention
+from hashlib import sha256
 
 router = APIRouter()
 
-# TODO : what to do with duplication data
 @router.post("/internal/mentions/bulk")
 async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
     if not file.filename.endswith('.json'):
@@ -33,7 +34,9 @@ async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
         try:
             mention = MentionItem(**item)
             normalized_mention = normalize_mention(mention)
-            dedup_key = f"{normalized_mention.external_id}-{normalized_mention.source.lower().strip()}"
+            title = normalized_mention.title if normalized_mention.title not in ["", None] else ""
+
+            idempotency_key = f"{title.lower().strip()}|{normalized_mention.content.lower().strip()}"
                         
             records.append((
                 normalized_mention.external_id,
@@ -44,10 +47,11 @@ async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
                 normalized_mention.author,
                 normalized_mention.published_at,
                 normalized_mention.engagement,
-                dedup_key
+                sha256(idempotency_key.encode()).hexdigest()
             ))
         except Exception as e:
             not_processed.append(item)
+            print(e)
             continue
             
     if not records:
@@ -56,20 +60,47 @@ async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
         }, status_code=status.HTTP_400_BAD_REQUEST)
         
     query = """
+        WITH url_update AS (
+            UPDATE mentions 
+            SET engagement = GREATEST(mentions.engagement, $8),
+                title = COALESCE(mentions.title, $3),
+                content = COALESCE(mentions.content, $4),
+                author = COALESCE(mentions.author, $6),
+                published_at = COALESCE(mentions.published_at, $7)
+            WHERE url = $5
+            RETURNING id
+        )
         INSERT INTO mentions (external_id, source, title, content, url, author, published_at, engagement, idempotency_key)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (idempotency_key) DO NOTHING
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+        WHERE NOT EXISTS (SELECT 1 FROM url_update)
+        ON CONFLICT (idempotency_key) DO UPDATE SET 
+            engagement = GREATEST(mentions.engagement, EXCLUDED.engagement), 
+            title = COALESCE(mentions.title, EXCLUDED.title), 
+            content = COALESCE(mentions.content, EXCLUDED.content),
+            url = COALESCE(mentions.url, EXCLUDED.url),
+            author = COALESCE(mentions.author, EXCLUDED.author),
+            published_at = COALESCE(mentions.published_at, EXCLUDED.published_at);
     """
     
     pool = request.app.state.pool
-    async with pool.acquire() as conn:
-        await conn.executemany(query, records)
+    try:
+        async with pool.acquire() as conn:
+            await conn.executemany(query, records)
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
         
     return JSONResponse(content={
         "message": "Bulk Import Completed",
-        "count": {
-            "processed": len(records),
-            "not_processed": len(not_processed)
+        "data": {
+            "processed": {
+                "count": len(records),
+                "inserted": jsonable_encoder(records)
+            },
+            "not_processed": {
+                "count": len(not_processed),
+                "data": jsonable_encoder(not_processed)
+            }
         }
     }, status_code=status.HTTP_200_OK)
 
@@ -150,9 +181,9 @@ async def mention_stats(request: Request, group_by: Literal["source", "day"]):
             query_result = await conn.fetch(query)
 
         if group_by == "source":
-            return [{"source": source, "count": count} for source, count in query_result]
+            return [{"source": row["source"], "count": row["count"]} for row in query_result]
         elif group_by == "day":
-            return [{"day": day, "count": count} for day, count in query_result]
+            return [{"day": row["day"], "count": row["count"]} for row in query_result]
     except Exception as e:
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")

@@ -16,21 +16,15 @@ class MentionItem(BaseModel):
     engagement: Any = None
 
 class MentionSearchFilter(BaseModel):
-    page: int = 1
-    page_size: int = 10
+    page: int = Field(ge=1, default=1)
+    page_size: int = Field(ge=1, default=10)
     q: str | None = None
     source: str | None = None
     from_date: datetime | None = Field(Query(default=None, alias="from"), validation_alias=AliasChoices("from", "from_date"))
     to: datetime | None = None 
 
     @model_validator(mode="after")
-    def validate(self):
-        if self.page < 1:
-            raise ValueError("page must be greater than 0")
-
-        if self.page_size < 1:
-            raise ValueError("page_size must be greater than 0")
-        
+    def validate(self):       
         if self.from_date and self.to:
             if self.from_date > self.to:
                 raise ValueError("from_date must be earlier than to_date")
@@ -45,19 +39,3 @@ class Pagination(BaseModel, Generic[T]):
     has_next: bool
     has_prev: bool
     data: list[T] 
-
-    @model_validator(mode="after")
-    def validate(self):
-        if self.page < 1:
-            raise ValueError("page must be greater than 0")
-    
-        if self.page_size < 1:
-            raise ValueError("page_size must be greater than 0")
-
-        if self.page > self.total_pages:
-            raise ValueError("page must be less than or equal to total_pages")    
-
-        if self.page_size > self.total_items:
-            raise ValueError("page_size must be less than or equal to total_items")
-        
-        return self

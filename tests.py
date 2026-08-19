@@ -17,8 +17,6 @@ def test_read_main(client):
 
 def test_read_mentions(client):
     response = client.get("/mentions")
-    # Might return 200 or 500 depending on DB connection in test env, 
-    # but the test was already here so we keep it
     pass
 
 def test_search_mentions_validation(client):
@@ -68,7 +66,6 @@ def test_ingest_mentions(client):
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", valid_data)})
     assert response.status_code in (200, 500)
 
-# --- Risky Parts Tests ---
 def test_parse_date():
     # Unix timestamp
     assert parse_date(1691654400) == datetime(2023, 8, 10, 8, 0, tzinfo=timezone.utc)
@@ -77,8 +74,10 @@ def test_parse_date():
     assert parse_date("2026-08-11T14:02:33+08:00") == datetime(2026, 8, 11, 14, 2, 33, tzinfo=timezone(timedelta(hours=8)))
     # Custom formats
     assert parse_date("2026-08-10 08:15:00") == datetime(2026, 8, 10, 8, 15, tzinfo=timezone.utc)
-    assert parse_date("10/08/2026") == datetime(2026, 8, 10, 0, 0, tzinfo=timezone.utc)
     assert parse_date("2026-08-10") == datetime(2026, 8, 10, 0, 0, tzinfo=timezone.utc)
+    # Unambiguous slash formats
+    assert parse_date("13/08/2026") == datetime(2026, 8, 13, 0, 0, tzinfo=timezone.utc) # DD/MM/YYYY
+    assert parse_date("08/13/2026") == datetime(2026, 8, 13, 0, 0, tzinfo=timezone.utc) # MM/DD/YYYY
     # Invalid
     assert parse_date("invalid date") is None
     assert parse_date(None) is None
@@ -103,7 +102,6 @@ def test_normalize_text():
     assert normalize_text(None) is None
 
 def test_mention_search_filter_date_range():
-    # Valid date ranges
     filter_valid = MentionSearchFilter(**{"from": "2026-01-01T00:00:00Z", "to": "2026-12-31T00:00:00Z"})
     assert filter_valid.from_date <= filter_valid.to
     

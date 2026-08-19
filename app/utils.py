@@ -1,3 +1,5 @@
+import re
+
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -18,7 +20,7 @@ def normalize_mention(mention_item: MentionItem) -> MentionItem:
 
 def normalize_source(source: Optional[str]) -> Optional[str]:
     if not source:
-        return None
+        return None 
 
     return " ".join(source.strip().split())
 
@@ -52,6 +54,11 @@ def parse_date(value: Any) -> Optional[datetime]:
     if value is None:
         return None
 
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(value, tz=timezone.utc)
 
@@ -80,7 +87,6 @@ def parse_date(value: Any) -> Optional[datetime]:
 
     for fmt in (
         "%Y-%m-%d %H:%M:%S",
-        "%d/%m/%Y",
         "%Y-%m-%d",
     ):
         try:
@@ -89,5 +95,15 @@ def parse_date(value: Any) -> Optional[datetime]:
             )
         except ValueError:
             continue
+            
+    if re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", value):
+        part1, part2, year = value.split('/')
+        p1, p2 = int(part1), int(part2)
+        if p1 > 12 and p2 <= 12:
+            return datetime(int(year), p2, p1, tzinfo=timezone.utc)
+        elif p2 > 12 and p1 <= 12:
+            return datetime(int(year), p1, p2, tzinfo=timezone.utc)
+        else:
+            raise ValueError(f"Ambiguous date format '{value}': could be DD/MM/YYYY or MM/DD/YYYY")
 
     return None
