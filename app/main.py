@@ -14,9 +14,14 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.pool = await create_pool()
+    try:
+        app.state.pool = await create_pool()
+    except Exception as e:
+        print(f"Warning: Failed to connect to database on startup: {e}")
+        app.state.pool = None
     yield
-    await app.state.pool.close()
+    if getattr(app.state, "pool", None):
+        await app.state.pool.close()
 
 app = FastAPI(
     title="Media Monitoring API",
