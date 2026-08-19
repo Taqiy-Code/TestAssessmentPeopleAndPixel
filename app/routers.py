@@ -2,6 +2,7 @@ import json
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from fastapi.responses import JSONResponse
 from asyncpg import Pool
+from typing import Literal
 
 from app.db import create_pool
 from app.schemas import MentionItem, MentionSearchFilter, Pagination
@@ -9,6 +10,7 @@ from app.utils import normalize_mention
 
 router = APIRouter()
 
+# TODO : what to do with duplication data
 @router.post("/internal/mentions/bulk")
 async def internal_bulk_ingest(file: UploadFile = File(...)):
     if not file.filename.endswith('.json'):
@@ -126,11 +128,40 @@ async def search_mentions(filter: MentionSearchFilter = Depends()):
             data=mentions
         )
     except Exception as e:
-        print(str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        print(e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
     finally:
         await pool.close()
 
 @router.get("/mentions/stats")
-async def mention_stats(request):
-    pass 
+async def mention_stats(group_by: Literal["source", "day"]):
+    pool = await create_pool()
+
+    try:
+        async with pool.acquire() as conn:
+            if group_by == "source":
+                query = """
+                    SELECT source, COUNT(*) AS count
+                    FROM mentions
+                    GROUP BY source
+                    ORDER BY count DESC
+                """
+            else:
+                query = """
+                    SELECT DATE_TRUNC('day', published_at) AS day, COUNT(*) AS count
+                    FROM mentions
+                    GROUP BY day
+                    ORDER BY day DESC
+                """
+            
+            query_result = await conn.fetch(query)
+
+        if group_by == "source":
+            return [{"source": source, "count": count} for source, count in query_result]
+        elif group_by == "day":
+            return [{"day": day, "count": count} for day, count in query_result]
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    finally:
+        await pool.close()
