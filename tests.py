@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime, timezone, timedelta
 from app.main import app
@@ -5,19 +6,22 @@ from app.utils import parse_date, parse_int, normalize_text
 from app.schemas import MentionSearchFilter
 from pydantic import ValidationError
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    with TestClient(app) as c:
+        yield c
 
-def test_read_main():
+def test_read_main(client):
     response = client.get("/docs")
     assert response.status_code == 200
 
-def test_read_mentions():
+def test_read_mentions(client):
     response = client.get("/mentions")
     # Might return 200 or 500 depending on DB connection in test env, 
     # but the test was already here so we keep it
     pass
 
-def test_search_mentions_validation():
+def test_search_mentions_validation(client):
     response = client.get("/mentions?page=a")
     assert response.status_code == 422
 
@@ -31,13 +35,13 @@ def test_search_mentions_validation():
     assert response.status_code == 422
 
     response = client.get("/mentions?from=2021-01-02&to=2021-01-01")
-    assert response.status_code == 400
-    assert response.json()["detail"]["message"] == "from_date must be earlier than to_date"
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == "Value error, from_date must be earlier than to_date"
 
     response = client.get("/mentions?from=2021-01-01&to=2021-01-02")
     assert response.status_code in (200, 500)
   
-def test_stats_mentions():
+def test_stats_mentions(client):
     response = client.get("/mentions/stats?group_by=source")
     assert response.status_code in (200, 500)
     
@@ -47,7 +51,7 @@ def test_stats_mentions():
     response = client.get("/mentions/stats?group_by=author")
     assert response.status_code == 422
 
-def test_ingest_mentions():
+def test_ingest_mentions(client):
     response = client.post("/internal/mentions/bulk", files={"file": ("data.csv", b"a,b,c")})
     assert response.status_code == 400
     assert response.json()["detail"]["message"] == "File must be JSON"
@@ -57,8 +61,8 @@ def test_ingest_mentions():
     assert response.json()["detail"]["message"] == "Unable to parse JSON"
     
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", b"[]")})
-    assert response.status_code == 200
-    assert response.json() == {"message": "No valid data to insert"}
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "No valid data to insert"
     
     valid_data = b'[{"external_id": "123", "source": "twitter", "content": "hello world", "url": "http://example.com"}]'
     response = client.post("/internal/mentions/bulk", files={"file": ("data.json", valid_data)})
@@ -103,9 +107,8 @@ def test_mention_search_filter_date_range():
     filter_valid = MentionSearchFilter(**{"from": "2026-01-01T00:00:00Z", "to": "2026-12-31T00:00:00Z"})
     assert filter_valid.from_date <= filter_valid.to
     
-    from fastapi import HTTPException
     try:
         MentionSearchFilter(**{"from": "2026-12-31T00:00:00Z", "to": "2026-01-01T00:00:00Z"})
-        assert False, "Should have raised HTTPException"
-    except HTTPException:
+        assert False, "Should have raised ValidationError"
+    except ValidationError:
         pass

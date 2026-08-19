@@ -1,7 +1,7 @@
 from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
 from typing import Any, Generic, TypeVar
 from datetime import datetime
-from fastapi import HTTPException, status, Query
+from fastapi import Query
 
 T = TypeVar("T")
 
@@ -26,14 +26,14 @@ class MentionSearchFilter(BaseModel):
     @model_validator(mode="after")
     def validate(self):
         if self.page < 1:
-            raise HTTPException(detail="page must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
+            raise ValueError("page must be greater than 0")
 
         if self.page_size < 1:
-            raise HTTPException(detail="page_size must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
+            raise ValueError("page_size must be greater than 0")
         
         if self.from_date and self.to:
             if self.from_date > self.to:
-                raise HTTPException(detail="from_date must be earlier than to_date",status_code=status.HTTP_400_BAD_REQUEST)
+                raise ValueError("from_date must be earlier than to_date")
 
         return self
 

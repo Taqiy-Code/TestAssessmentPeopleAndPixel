@@ -1,10 +1,8 @@
 import json
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
 from fastapi.responses import JSONResponse
-from asyncpg import Pool
 from typing import Literal
 
-from app.db import create_pool
 from app.schemas import MentionItem, MentionSearchFilter, Pagination
 from app.utils import normalize_mention
 
@@ -12,7 +10,7 @@ router = APIRouter()
 
 # TODO : what to do with duplication data
 @router.post("/internal/mentions/bulk")
-async def internal_bulk_ingest(file: UploadFile = File(...)):
+async def internal_bulk_ingest(request: Request, file: UploadFile = File(...)):
     if not file.filename.endswith('.json'):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
             "message" : "File must be JSON"
@@ -53,9 +51,9 @@ async def internal_bulk_ingest(file: UploadFile = File(...)):
             continue
             
     if not records:
-        return {
+        raise HTTPException(detail={
             "message": "No valid data to insert"
-        }
+        }, status_code=status.HTTP_400_BAD_REQUEST)
         
     query = """
         INSERT INTO mentions (external_id, source, title, content, url, author, published_at, engagement, idempotency_key)
@@ -63,12 +61,9 @@ async def internal_bulk_ingest(file: UploadFile = File(...)):
         ON CONFLICT (idempotency_key) DO NOTHING
     """
     
-    pool = await create_pool()
-    try:
-        async with pool.acquire() as conn:
-            await conn.executemany(query, records)
-    finally:
-        await pool.close()
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        await conn.executemany(query, records)
         
     return JSONResponse(content={
         "message": "Bulk Import Completed",
@@ -79,8 +74,8 @@ async def internal_bulk_ingest(file: UploadFile = File(...)):
     }, status_code=status.HTTP_200_OK)
 
 @router.get("/mentions")
-async def search_mentions(filter: MentionSearchFilter = Depends()):
-    pool = await create_pool()
+async def search_mentions(request: Request, filter: MentionSearchFilter = Depends()):
+    pool = request.app.state.pool
 
     try:
         async with pool.acquire() as conn:
@@ -130,12 +125,10 @@ async def search_mentions(filter: MentionSearchFilter = Depends()):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    finally:
-        await pool.close()
 
 @router.get("/mentions/stats")
-async def mention_stats(group_by: Literal["source", "day"]):
-    pool = await create_pool()
+async def mention_stats(request: Request, group_by: Literal["source", "day"]):
+    pool = request.app.state.pool
 
     try:
         async with pool.acquire() as conn:
@@ -163,5 +156,3 @@ async def mention_stats(group_by: Literal["source", "day"]):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    finally:
-        await pool.close()
