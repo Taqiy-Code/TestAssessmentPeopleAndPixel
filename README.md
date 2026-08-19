@@ -30,8 +30,7 @@ A asynchronous REST backend for ingesting, normalizing, deduplicating, querying,
 │   └── db.py          # Database pool factory using asyncpg
 ├── migrations/        # Sequential SQL migration files
 │   ├── 001_init.sql                 # Base table creation with source & published_at indexes
-│   ├── 002_add_unique_to_mentions.sql # Unique index for URL deduplication
-│   └── 003_reindex_mentions.sql       # Reindex script for mitigating MVCC dead tuple bloat
+│   └── 002_add_unique_to_mentions.sql # Unique index for URL deduplication
 ├── tests.py           # Pytest test suite covering edge cases and risky logic
 ├── Dockerfile         # Multi-stage/isolated container definition with uv virtual environment
 ├── docker-compose.yml # Orchestrates PostgreSQL service (with auto-migrations) & FastAPI backend
