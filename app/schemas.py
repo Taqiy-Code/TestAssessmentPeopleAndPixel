@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Any, Generic, TypeVar, List
+from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
+from typing import Any, Generic, TypeVar
 from datetime import datetime
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Query
 
 T = TypeVar("T")
 
@@ -20,16 +20,16 @@ class MentionSearchFilter(BaseModel):
     page_size: int = 10
     q: str | None = None
     source: str | None = None
-    from_date : datetime | None = Field(alias="from", default=None)
+    from_date: datetime | None = Field(Query(default=None, alias="from"), validation_alias=AliasChoices("from", "from_date"))
     to: datetime | None = None 
 
     @model_validator(mode="after")
     def validate(self):
         if self.page < 1:
-                    raise HTTPException(detail="page must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
+            raise HTTPException(detail="page must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
 
         if self.page_size < 1:
-                    raise HTTPException(detail="page_size must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
+            raise HTTPException(detail="page_size must be greater than 0", status_code=status.HTTP_400_BAD_REQUEST)
         
         if self.from_date and self.to:
             if self.from_date > self.to:
@@ -44,10 +44,4 @@ class Pagination(BaseModel, Generic[T]):
     total_pages: int
     has_next: bool
     has_prev: bool
-    data: List[T] 
-
-    @field_validator("page")
-    def validate_page(cls, value):
-        if value < 1:
-            raise ValueError("page must be greater than 0")
-        return value
+    data: list[T] 

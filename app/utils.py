@@ -27,7 +27,7 @@ def normalize_text(value: Optional[str]) -> Optional[str]:
         return None
 
     bs = BeautifulSoup(value, "html.parser") 
-    value = bs.get_text(value, strip=True)
+    value = bs.get_text(separator=" ", strip=True)
 
     return value
 
