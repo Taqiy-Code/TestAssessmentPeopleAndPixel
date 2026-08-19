@@ -45,3 +45,19 @@ class Pagination(BaseModel, Generic[T]):
     has_next: bool
     has_prev: bool
     data: list[T] 
+
+    @model_validator(mode="after")
+    def validate(self):
+        if self.page < 1:
+            raise ValueError("page must be greater than 0")
+    
+        if self.page_size < 1:
+            raise ValueError("page_size must be greater than 0")
+
+        if self.page > self.total_pages:
+            raise ValueError("page must be less than or equal to total_pages")    
+
+        if self.page_size > self.total_items:
+            raise ValueError("page_size must be less than or equal to total_items")
+        
+        return self
